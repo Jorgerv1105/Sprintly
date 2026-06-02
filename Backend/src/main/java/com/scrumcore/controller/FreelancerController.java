@@ -41,15 +41,19 @@ public class FreelancerController {
     @PostMapping
     public ResponseEntity<?> crear(@RequestBody Map<String, Object> body) {
         try {
+            // Usamos Number para evitar errores de cast entre Integer y Long
+            String  nombre          = (String) body.get("nombre");
+            String  correo          = (String) body.get("correo");
+            String  password        = (String) body.get("password");
+            String  especialidad    = (String) body.get("especialidad");
+            Integer horasDisponibles = ((Number) body.get("horasDisponibles")).intValue();
+            Double  costoHora       = ((Number) body.get("costoHora")).doubleValue();
+
             Freelancer f = freelancerService.crear(
-                (String)  body.get("nombre"),
-                (String)  body.get("correo"),
-                (String)  body.get("password"),
-                (String)  body.get("especialidad"),
-                (Integer) body.get("horasDisponibles"),
-                ((Number) body.get("costoHora")).doubleValue()
+                nombre, correo, password, especialidad, horasDisponibles, costoHora
             );
             return ResponseEntity.ok(f);
+
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", e.getMessage()));

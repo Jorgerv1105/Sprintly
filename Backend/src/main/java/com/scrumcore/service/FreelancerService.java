@@ -6,6 +6,7 @@ import com.scrumcore.repository.FreelancerRepository;
 import com.scrumcore.repository.UsuarioRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Service
@@ -36,12 +37,22 @@ public class FreelancerService {
         return freelancerRepository.findByUsuarioId(usuarioId);
     }
 
-    // Crea el Usuario + Freelancer en una sola operación
+    public List<Freelancer> listarActivos() {
+        return freelancerRepository.findByActivoTrue();
+    }
+
+    // @Transactional garantiza que si falla el freelancer, se revierte el usuario también
+    @Transactional
     public Freelancer crear(String nombre, String correo, String password,
                             String especialidad, Integer horasDisponibles,
                             Double costoHora) {
 
-        // 1. Crear el usuario para login
+        // Verificar que el correo no exista
+        if (usuarioRepository.findByCorreo(correo) != null) {
+            throw new RuntimeException("El correo ya está registrado");
+        }
+
+        // 1. Crear usuario para login
         Usuario usuario = new Usuario();
         usuario.setNombre(nombre);
         usuario.setCorreo(correo);
@@ -50,7 +61,7 @@ public class FreelancerService {
         usuario.setHorasDisponibles(horasDisponibles);
         usuarioRepository.save(usuario);
 
-        // 2. Crear el perfil freelancer con datos extra
+        // 2. Crear perfil freelancer con datos extra
         Freelancer freelancer = new Freelancer();
         freelancer.setEspecialidad(especialidad);
         freelancer.setHorasDisponibles(horasDisponibles);
@@ -71,9 +82,5 @@ public class FreelancerService {
 
     public void eliminar(Long id) {
         freelancerRepository.deleteById(id);
-    }
-
-    public List<Freelancer> listarActivos() {
-        return freelancerRepository.findByActivoTrue();
     }
 }
