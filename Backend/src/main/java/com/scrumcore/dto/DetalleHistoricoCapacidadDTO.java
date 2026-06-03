@@ -7,9 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class EquipoInternoDTO {
-
-    private String nombre;
-    private String rol;
-    private Integer horasDisponibles;
+public class DetalleHistoricoCapacidadDTO {
+    private String proyecto;
+    private double horasReales;
 }

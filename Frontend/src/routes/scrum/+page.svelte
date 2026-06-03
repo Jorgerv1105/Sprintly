@@ -24,8 +24,26 @@
     type Usuario  = { id: number; nombre: string; rol: string; horasDisponibles: number };
     type Tarea    = { id: number; nombre: string; horasNecesarias: number; estado: string; sprint: { id: number; nombre: string }; usuarioAsignado: { id: number; nombre: string } | null };
 
+    // Capacidad
+    type CapItem = {
+        nombreSprint: string; nombreProyecto: string; diasHabiles: number; semanas: number;
+        proyectosHistoricosAnalizados: number; horasEstimadas: number;
+        detalleHistorico: {proyecto: string; horasReales: number}[];
+        horasInternas: number; equipoInterno: {nombre: string; horasDiarias: number; horasDisponibles: number}[];
+        deficit: number; hayDeficit: boolean; riesgoOperativo: number; viabilidad: string;
+        costoExtraTotal: number;
+        contratacionesSugeridas: {nombreFreelancer: string; especialidad: string; tarifaHora: number; horasAsignadas: number; costo: number}[];
+    };
+
+    // Simulador
+    type SimResult = {
+        sprint: string; proyecto: string; sprintCapacity: number;
+        totalHorasPredichas: number; sprintRisk: string; tareasAnalizadas: number;
+        resultados: {nombre: string; horasEstimadas: number; horasPredichas: number; desviacion: number; confianza: string; esNueva: boolean; tareasSimilares: string[]}[];
+    };
+
     let nombre     = $state("");
-    let pestana    = $state<"motor" | "sprints" | "tareas">("motor");
+    let pestana    = $state<"motor" | "capacidad" | "simulador" | "sprints" | "tareas">("motor");
 
     let proyectos  = $state<Proyecto[]>([]);
     let sprints    = $state<Sprint[]>([]);
@@ -37,6 +55,18 @@
     let analisis = $state<CoreItem | null>(null);
     let analizando = $state(false);
     let errorAnalisis = $state("");
+
+    // Variables Capacidad
+    let sprintCapacidad = $state("");
+    let analisisCapacidad = $state<CapItem | null>(null);
+    let cargandoCapacidad = $state(false);
+
+    // Variables Simulador
+    let sprintSimulador = $state("");
+    let nuevaTareaNombre = $state("");
+    let nuevaTareaHoras = $state(0);
+    let resultadoSimulador = $state<SimResult | null>(null);
+    let cargandoSimulador = $state(false);
 
     // Formulario Sprint
     let sNombre = $state(""); let sInicio = $state(""); let sFin = $state("");
@@ -96,6 +126,40 @@
             errorAnalisis = "Error al analizar el sprint";
         } finally {
             analizando = false;
+        }
+    }
+
+    // ── Ejecutar Capacidad ───────────────────────────────
+    async function ejecutarCapacidad() {
+        if (!sprintCapacidad) return;
+        cargandoCapacidad = true;
+        analisisCapacidad = null;
+        try {
+            const res = await axios.get(`http://localhost:8080/api/core/capacidad/${sprintCapacidad}`);
+            analisisCapacidad = res.data;
+        } catch (e) {
+            console.error("Error al analizar capacidad:", e);
+        } finally {
+            cargandoCapacidad = false;
+        }
+    }
+
+    // ── Ejecutar Simulador ───────────────────────────────
+    async function ejecutarSimulador() {
+        if (!sprintSimulador) return;
+        cargandoSimulador = true;
+        resultadoSimulador = null;
+        try {
+            const res = await axios.post("http://localhost:8080/api/core/simular", {
+                sprintId: Number(sprintSimulador),
+                nombreNuevaTarea: nuevaTareaNombre || null,
+                horasNuevaTarea: nuevaTareaHoras || null
+            });
+            resultadoSimulador = res.data;
+        } catch (e) {
+            console.error("Error al simular sprint:", e);
+        } finally {
+            cargandoSimulador = false;
         }
     }
 
@@ -186,12 +250,13 @@
         <h1>Panel Scrum Master</h1>
 
         <nav>
-            <button class={pestana === 'motor'   ? 'activo' : ''} onclick={() => pestana = 'motor'}>Motor de Análisis</button>
-            <button class={pestana === 'sprints' ? 'activo' : ''} onclick={() => pestana = 'sprints'}>Sprints</button>
-            <button class={pestana === 'tareas'  ? 'activo' : ''} onclick={() => pestana = 'tareas'}>Tareas</button>
+            <button class={pestana === 'motor'     ? 'activo' : ''} onclick={() => pestana = 'motor'}>Motor</button>
+            <button class={pestana === 'capacidad' ? 'activo' : ''} onclick={() => pestana = 'capacidad'}>Capacidad</button>
+            <button class={pestana === 'simulador' ? 'activo' : ''} onclick={() => pestana = 'simulador'}>Simulador</button>
+            <button class={pestana === 'sprints'   ? 'activo' : ''} onclick={() => pestana = 'sprints'}>Sprints</button>
+            <button class={pestana === 'tareas'    ? 'activo' : ''} onclick={() => pestana = 'tareas'}>Tareas</button>
         </nav>
 
-        <!-- ── MOTOR ────────────────────────────────────── -->
         {#if pestana === 'motor'}
 
         <section>
@@ -214,7 +279,6 @@
         <section>
             <h2>{analisis.nombreSprint} — {analisis.nombreProyecto}</h2>
 
-            <!-- KPIs -->
             <div class="kpis">
                 <div class="kpi">
                     <span class="kpi-label">Similitud histórica</span>
@@ -222,7 +286,7 @@
                 </div>
                 <div class="kpi">
                     <span class="kpi-label">Alerta de riesgo</span>
-                    <span class="kpi-valor riesgo-{analisis.alertaRiesgo.toLowerCase()}">{analisis.alertaRiesgo}</span>
+                    <span class="kpi-valor riesgo-{analisis.alertaRiesgo?.toLowerCase()}">{analisis.alertaRiesgo}</span>
                 </div>
                 <div class="kpi">
                     <span class="kpi-label">Horas necesarias</span>
@@ -242,18 +306,16 @@
                 </div>
             </div>
 
-            <!-- Razón -->
             {#if analisis.razonSimilitud}
             <div class="razon">
                 <strong>Razón de similitud:</strong> {analisis.razonSimilitud}
             </div>
             {/if}
 
-            <!-- Comparación histórica -->
             <h3>Proyectos históricos comparados</h3>
-            {#if analisis.detalleHistorico.length === 0}
+            {#if analisis.detalleHistorico && analisis.detalleHistorico.length === 0}
                 <p class="vacio">No hay proyectos históricos para comparar. Crea proyectos con estado HISTORICO.</p>
-            {:else}
+            {:else if analisis.detalleHistorico}
                 <table>
                     <thead>
                         <tr>
@@ -284,7 +346,6 @@
                 </table>
             {/if}
 
-            <!-- Equipo y freelancer -->
             <div class="doble">
                 <div>
                     <h3>Equipo disponible</h3>
@@ -293,12 +354,14 @@
                             <tr><th>Developer</th><th>Horas disponibles</th></tr>
                         </thead>
                         <tbody>
-                            {#each analisis.equipoInterno as e (e.nombre)}
-                            <tr>
-                                <td>{e.nombre}</td>
-                                <td>{e.horasDisponibles}h</td>
-                            </tr>
-                            {/each}
+                            {#if analisis.equipoInterno}
+                                {#each analisis.equipoInterno as e (e.nombre)}
+                                <tr>
+                                    <td>{e.nombre}</td>
+                                    <td>{e.horasDisponibles}h</td>
+                                </tr>
+                                {/each}
+                            {/if}
                             <tr class="fila-total">
                                 <td><strong>Total</strong></td>
                                 <td><strong>{analisis.horasDisponibles}h</strong></td>
@@ -334,7 +397,231 @@
 
         {/if}
 
-        <!-- ── SPRINTS ───────────────────────────────────── -->
+        {#if pestana === 'capacidad'}
+        <section>
+            <h2>Análisis de Capacidad</h2>
+            <p class="descripcion">Selecciona un sprint para calcular días hábiles, capacidad real del equipo y costo de freelancers.</p>
+            <div class="fila-analisis">
+                <select bind:value={sprintCapacidad} onchange={ejecutarCapacidad}>
+                    <option value="">— Selecciona un sprint —</option>
+                    {#each sprints as s (s.id)}
+                    <option value={s.id}>{s.nombre} — {s.proyecto?.nombre} ({s.fechaInicio} → {s.fechaFin})</option>
+                    {/each}
+                </select>
+                {#if cargandoCapacidad}<span class="cargando">Calculando...</span>{/if}
+            </div>
+        </section>
+
+        {#if analisisCapacidad}
+        <section>
+            <h2>{analisisCapacidad.nombreSprint} — {analisisCapacidad.nombreProyecto}</h2>
+
+            <div class="kpis">
+                <div class="kpi">
+                    <span class="kpi-label">Días hábiles</span>
+                    <span class="kpi-valor">{analisisCapacidad.diasHabiles}</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Semanas</span>
+                    <span class="kpi-valor">{analisisCapacidad.semanas}</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Horas estimadas (histórico)</span>
+                    <span class="kpi-valor">{analisisCapacidad.horasEstimadas}h</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Capacidad interna</span>
+                    <span class="kpi-valor verde">{analisisCapacidad.horasInternas}h</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Déficit</span>
+                    <span class="kpi-valor {analisisCapacidad.hayDeficit ? 'rojo' : 'verde'}">
+                        {analisisCapacidad.deficit}h
+                    </span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Viabilidad</span>
+                    <span class="kpi-valor {analisisCapacidad.viabilidad === 'Deficitario' ? 'rojo' : 'verde'}">
+                        {analisisCapacidad.viabilidad}
+                    </span>
+                </div>
+            </div>
+
+            <div class="banner {analisisCapacidad.hayDeficit ? 'banner-rojo' : 'banner-verde'}">
+                {analisisCapacidad.hayDeficit
+                    ? `✕ DÉFICIT OPERATIVO — Se requiere contratación externa · Riesgo: ${analisisCapacidad.riesgoOperativo}%`
+                    : '✓ VIABLE — Capacidad interna suficiente'
+                }
+                &nbsp;·&nbsp; {analisisCapacidad.semanas} semanas · {analisisCapacidad.diasHabiles} días hábiles
+            </div>
+
+            <div class="doble">
+                <div>
+                    <h3>Equipo interno · {analisisCapacidad.equipoInterno.length} developers</h3>
+                    <table>
+                        <thead>
+                            <tr><th>Developer</th><th>h/día</th><th>Total disponible</th></tr>
+                        </thead>
+                        <tbody>
+                            {#each analisisCapacidad.equipoInterno as e (e.nombre)}
+                            <tr>
+                                <td>{e.nombre}</td>
+                                <td>{e.horasDiarias}h</td>
+                                <td><strong>{e.horasDisponibles}h</strong></td>
+                            </tr>
+                            {/each}
+                            <tr class="fila-total">
+                                <td colspan="2">Total interno</td>
+                                <td><strong>{analisisCapacidad.horasInternas}h</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <h3>
+                        {analisisCapacidad.hayDeficit
+                            ? `Contrataciones sugeridas · $${analisisCapacidad.costoExtraTotal} estimado`
+                            : 'Contrataciones — no requeridas'}
+                    </h3>
+                    {#if !analisisCapacidad.hayDeficit}
+                        <p class="vacio">El equipo interno cubre la demanda del sprint.</p>
+                    {:else}
+                        <table>
+                            <thead>
+                                <tr><th>Freelancer</th><th>Especialidad</th><th>Tarifa</th><th>Horas</th><th>Costo</th></tr>
+                            </thead>
+                            <tbody>
+                                {#each analisisCapacidad.contratacionesSugeridas as c (c.nombreFreelancer)}
+                                <tr>
+                                    <td>{c.nombreFreelancer}</td>
+                                    <td>{c.especialidad}</td>
+                                    <td>${c.tarifaHora}/h</td>
+                                    <td>{c.horasAsignadas}h</td>
+                                    <td><strong>${c.costo}</strong></td>
+                                </tr>
+                                {/each}
+                                <tr class="fila-total">
+                                    <td colspan="4">Costo total externo</td>
+                                    <td><strong>${analisisCapacidad.costoExtraTotal}</strong></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    {/if}
+                </div>
+            </div>
+
+            <h3>Historial analizado · {analisisCapacidad.proyectosHistoricosAnalizados} proyectos históricos</h3>
+            {#if analisisCapacidad.detalleHistorico.length === 0}
+                <p class="vacio">No hay proyectos con estado HISTORICO para comparar.</p>
+            {:else}
+                <table>
+                    <thead><tr><th>Proyecto histórico</th><th>Horas reales completadas</th></tr></thead>
+                    <tbody>
+                        {#each analisisCapacidad.detalleHistorico as d (d.proyecto)}
+                        <tr>
+                            <td>{d.proyecto}</td>
+                            <td><strong>{d.horasReales}h</strong></td>
+                        </tr>
+                        {/each}
+                        <tr class="fila-total">
+                            <td>Promedio estimado (base del cálculo)</td>
+                            <td><strong>{analisisCapacidad.horasEstimadas}h</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            {/if}
+        </section>
+        {/if}
+        {/if}
+
+        {#if pestana === 'simulador'}
+        <section>
+            <h2>Simulador de Sprint</h2>
+            <p class="descripcion">Selecciona un sprint y opcionalmente agrega una tarea simulada para predecir su impacto en las horas totales.</p>
+            <div class="formulario">
+                <div class="campo">
+                    <label>Sprint a simular</label>
+                    <select bind:value={sprintSimulador}>
+                        <option value="">— Selecciona un sprint —</option>
+                        {#each sprints as s (s.id)}
+                        <option value={s.id}>{s.nombre} — {s.proyecto?.nombre}</option>
+                        {/each}
+                    </select>
+                </div>
+                <div class="campo">
+                    <label>Simular nueva tarea (opcional)</label>
+                    <input bind:value={nuevaTareaNombre} placeholder="Nombre de tarea a simular" />
+                </div>
+                <div class="campo">
+                    <label>Horas estimadas (nueva tarea)</label>
+                    <input bind:value={nuevaTareaHoras} type="number" placeholder="0" />
+                </div>
+            </div>
+            <button onclick={ejecutarSimulador} disabled={!sprintSimulador || cargandoSimulador}>
+                {cargandoSimulador ? 'Analizando...' : 'Ejecutar simulación'}
+            </button>
+        </section>
+
+        {#if resultadoSimulador}
+        <section>
+            <h2>{resultadoSimulador.sprint} — {resultadoSimulador.proyecto}</h2>
+            <div class="kpis">
+                <div class="kpi">
+                    <span class="kpi-label">Capacidad del sprint</span>
+                    <span class="kpi-valor">{resultadoSimulador.sprintCapacity}h</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Horas predichas totales</span>
+                    <span class="kpi-valor">{resultadoSimulador.totalHorasPredichas}h</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Riesgo del sprint</span>
+                    <span class="kpi-valor riesgo-{resultadoSimulador.sprintRisk.toLowerCase()}">
+                        {resultadoSimulador.sprintRisk}
+                    </span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Tareas analizadas</span>
+                    <span class="kpi-valor">{resultadoSimulador.tareasAnalizadas}</span>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tarea</th>
+                        <th>Horas estimadas</th>
+                        <th>Horas predichas</th>
+                        <th>Desviación</th>
+                        <th>Confianza</th>
+                        <th>Tareas similares encontradas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {#each resultadoSimulador.resultados as r (r.nombre)}
+                    <tr class="{r.esNueva ? 'fila-nueva' : ''}">
+                        <td>{r.nombre} {r.esNueva ? '⭐ simulada' : ''}</td>
+                        <td>{r.horasEstimadas}h</td>
+                        <td><strong>{r.horasPredichas}h</strong></td>
+                        <td class="{r.desviacion > 0 ? 'rojo' : r.desviacion < 0 ? 'verde' : ''}">
+                            {r.desviacion > 0 ? '+' : ''}{r.desviacion}h
+                        </td>
+                        <td class="confianza-{r.confianza}">{r.confianza}</td>
+                        <td>
+                            {#if r.tareasSimilares.length === 0}
+                                <span class="sin-regla">Sin historial</span>
+                            {:else}
+                                {r.tareasSimilares.join(', ')}
+                            {/if}
+                        </td>
+                    </tr>
+                    {/each}
+                </tbody>
+            </table>
+        </section>
+        {/if}
+        {/if}
+
         {#if pestana === 'sprints'}
         <section>
             <h2>Crear Sprint</h2>
@@ -428,7 +715,6 @@
         </section>
         {/if}
 
-        <!-- ── TAREAS ────────────────────────────────────── -->
         {#if pestana === 'tareas'}
         <section>
             <h2>Asignar nueva tarea</h2>
@@ -587,6 +873,16 @@
 
     .freelancer-box { margin-top: 0.75rem; padding: 0.6rem 0.75rem; background: #fff8e1; border: 1px solid #ffe082; font-size: 0.82rem; color: #555; line-height: 1.7; }
 
+    /* Nuevos estilos integrados */
+    .descripcion { font-size: 0.82rem; color: #666; margin: 0 0 0.75rem; }
+    .banner { padding: 0.6rem 1rem; font-size: 0.85rem; font-weight: bold; margin: 0.75rem 0; }
+    .banner-verde { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; }
+    .banner-rojo  { background: #ffebee; border: 1px solid #ef9a9a; color: #c62828; }
+    .fila-nueva { background: #fffde7; }
+    .confianza-alta  { color: #2e7d32; font-weight: bold; }
+    .confianza-media { color: #f57f17; }
+    .confianza-baja  { color: #aaa; }
+
     /* Formulario */
     .formulario { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem; }
     .campo { display: flex; flex-direction: column; gap: 0.2rem; }
@@ -598,6 +894,7 @@
 
     button { padding: 0.4rem 0.9rem; background: #222; color: white; border: none; cursor: pointer; font-size: 0.88rem; }
     button:hover { background: #444; }
+    button:disabled { background: #999; cursor: not-allowed; }
     .btn-editar { background: #555; margin-right: 0.3rem; }
     .btn-editar:hover { background: #333; }
     .btn-eliminar { background: #c00; }
