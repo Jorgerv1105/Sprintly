@@ -14,13 +14,18 @@ public class TareaService {
         this.tareaRepository = tareaRepository;
     }
 
+    public List<Tarea> listarPorUsuario(Long usuarioId) {
+    return tareaRepository.findByUsuarioAsignadoId(usuarioId);
+    }
+
     public List<Tarea> listar() {
         return tareaRepository.findAll();
     }
 
     public Tarea guardar(Tarea tarea) {
-        return tareaRepository.save(tarea);
+    return tareaRepository.save(tarea);
     }
+    
 
     public Tarea buscarPorId(Long id) {
         return tareaRepository.findById(id)

@@ -5,10 +5,12 @@ import com.scrumcore.service.TareaService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/tareas")
 @CrossOrigin("*")
+
 public class TareaController {
 
     private final TareaService tareaService;
@@ -20,6 +22,11 @@ public class TareaController {
     @GetMapping
     public List<Tarea> listar() {
         return tareaService.listar();
+    }
+    
+    @GetMapping("/usuario/{usuarioId}")
+    public List<Tarea> listarPorUsuario(@PathVariable Long usuarioId) {
+        return tareaService.listarPorUsuario(usuarioId);
     }
 
     @GetMapping("/{id}")
@@ -47,5 +54,12 @@ public class TareaController {
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         tareaService.eliminar(id);
         return ResponseEntity.noContent().build();
+    }
+    @PatchMapping("/{id}/estado")
+    public ResponseEntity<Tarea> actualizarEstado(@PathVariable Long id,
+    @RequestBody Map<String, String> body) {
+        Tarea tarea = tareaService.buscarPorId(id);
+        tarea.setEstado(body.get("estado"));
+        return ResponseEntity.ok(tareaService.guardar(tarea));
     }
 }
